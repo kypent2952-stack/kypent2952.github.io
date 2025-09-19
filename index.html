@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AASM 수면 단계 심층 판독 가이드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Neutrals -->
+    <!-- Application Structure Plan: A single-page educational guide. The structure starts with a main navigation bar allowing users to select a specific sleep stage (W, N1, N2, N3, R). Clicking a stage button triggers a dynamic content update in a central panel, which now features detailed sub-sections for EEG, EOG, and EMG analysis. Crucially, a visualization area now contains three separate canvases, stacked vertically, to simultaneously render the key waveforms for EEG, EOG, and EMG, providing a true-to-life representation of PSG data. Below this, a new section on "Basic Brainwave Types" has been added to provide foundational knowledge before the interactive guide to artifacts and scoring challenges. It uses a grid layout with a canvas for each brainwave, offering a static, comparative view. This is followed by a dedicated section that provides an in-depth look at advanced topics like transitional epochs and artifacts, using expandable `details` tags for a clean, non-overwhelming presentation. Finally, the page concludes with summary hypnogram and proportion charts. This structure was chosen to provide a layered learning experience: a quick overview via the main navigation, a deep dive into each stage's criteria, a foundational lesson on brainwaves, and a comprehensive look at real-world scoring challenges. -->
+    <!-- Visualization & Content Choices: 
+        1. Sleep Stage Details: Report Info -> Detailed scoring rules for each stage. Goal -> Inform/Educate. Viz/Presentation -> Dynamic text blocks + three stacked canvases for EEG, EOG, and EMG. Interaction -> User clicks a stage button to reveal new, detailed content and redraw all three waveforms. Justification -> Simulating a real PSG display offers the most accurate and effective way to teach multi-channel scoring, emphasizing the crucial interplay between signals. Library/Method -> Vanilla JS for content and canvas updates, Canvas API for drawing.
+        2. Basic Brainwave Types: Report Info -> Foundational EEG rhythms. Goal -> Provide foundational knowledge. Viz/Presentation -> Static canvas visuals in a grid. Interaction -> None, for a focused learning experience. Justification -> Placing this section after the main guide but before the advanced topics provides a logical flow, reinforcing the core concepts before introducing complexities. Library/Method -> Canvas API for drawing.
+        3. Advanced Topics: Report Info -> Challenges in scoring (transitional epochs, artifacts). Goal -> Inform about real-world complexities. Viz/Presentation -> Expandable text sections using `details` tags. Interaction -> User clicks to show/hide content. Justification -> Keeps the main page clean while allowing motivated users to explore advanced concepts without clutter.
+        4. Full Night Hypnogram: Report Info -> Typical sleep cycle progression. Goal -> Show change over time. Viz/Presentation -> Line chart. Interaction -> Tooltips on hover. Justification -> Standard clinical visualization for a holistic view. Library/Method -> Chart.js.
+        5. Sleep Proportions: Report Info -> Time spent in each stage. Goal -> Compare proportions. Viz/Presentation -> Donut chart. Interaction -> Tooltips on hover. Justification -> A simple and effective way to summarize sleep architecture quantitatively. Library/Method -> Chart.js.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #F8F7F4;
+            color: #333;
+        }
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        .card {
+            background-color: #FFFFFF;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.3s ease-in-out;
+        }
+        .nav-button {
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        .nav-button.active {
+            background-color: #4F9A94;
+            color: white;
+            border-color: #4F9A94;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(79, 154, 148, 0.3);
+        }
+        .nav-button:hover:not(.active) {
+            background-color: #E0E7FF;
+            border-color: #A8D8EA;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        details > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 1rem;
+            background-color: #E0F2F1;
+            border-radius: 0.5rem;
+            font-weight: 500;
+        }
+        details[open] > summary {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+        details > summary::marker {
+            display: none;
+        }
+        details > summary::-webkit-details-marker {
+            display: none;
+        }
+        details > summary:before {
+            content: '▼';
+            margin-right: 0.5rem;
+            transition: transform 0.2s;
+        }
+        details[open] > summary:before {
+            transform: rotate(-180deg);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="main-container">
+        <header class="text-center my-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-800">수면 단계 심층 판독 가이드</h1>
+            <p class="mt-2 text-lg text-gray-600">EEG, EOG, EMG 파형 완전 정복</p>
+        </header>
+
+        <main>
+            <section id="intro" class="mb-12">
+                <div class="card text-center">
+                    <p class="text-gray-600 leading-relaxed max-w-4xl mx-auto">
+                        수면 단계 판독(Sleep Staging)은 수면다원검사의 핵심 과정으로, 각 단계의 미묘한 생체 신호 변화를 포착하는 데서 시작합니다. 이 가이드는 미국수면의학회(AASM)의 최신 기준에 따라 각 단계의 EEG, EOG, EMG 특징을 깊이 있게 다룹니다. 아래 버튼을 눌러 각 수면 단계의 특징을 시각적으로 확인하고 판독 기준을 익혀보세요.
+                    </p>
+                </div>
+            </section>
+
+            <section id="stage-selector" class="mb-8">
+                <div class="flex flex-wrap justify-center gap-2 md:gap-4">
+                    <button class="nav-button active font-bold py-2 px-6 rounded-full bg-white shadow" data-stage="W">W</button>
+                    <button class="nav-button font-bold py-2 px-6 rounded-full bg-white shadow" data-stage="N1">N1</button>
+                    <button class="nav-button font-bold py-2 px-6 rounded-full bg-white shadow" data-stage="N2">N2</button>
+                    <button class="nav-button font-bold py-2 px-6 rounded-full bg-white shadow" data-stage="N3">N3</button>
+                    <button class="nav-button font-bold py-2 px-6 rounded-full bg-white shadow" data-stage="R">REM</button>
+                </div>
+            </section>
+
+            <section id="stage-details" class="mb-12">
+                <div class="card">
+                    <div class="grid md:grid-cols-2 gap-8 items-center">
+                        <div id="stage-info">
+                            <h3 id="stage-title" class="text-3xl font-bold text-[#4F9A94] mb-4"></h3>
+                            <p id="stage-description" class="text-gray-700 leading-relaxed mb-6"></p>
+                            <div class="space-y-6">
+                                <div>
+                                    <h4 class="text-xl font-semibold text-gray-800 mb-2">EEG 심층 분석</h4>
+                                    <p id="eeg-analysis" class="text-gray-600 leading-relaxed"></p>
+                                </div>
+                                <div>
+                                    <h4 class="text-xl font-semibold text-gray-800 mb-2">EOG 심층 분석</h4>
+                                    <p id="eog-analysis" class="text-gray-600 leading-relaxed"></p>
+                                </div>
+                                <div>
+                                    <h4 class="text-xl font-semibold text-gray-800 mb-2">EMG 심층 분석</h4>
+                                    <p id="emg-analysis" class="text-gray-600 leading-relaxed"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col items-center justify-center min-h-[350px] p-4 bg-gray-50 rounded-lg">
+                            <h4 class="text-lg font-semibold text-gray-700 mb-2">대표 파형 시각화 (EEG/EOG/EMG)</h4>
+                            <div class="w-full flex flex-col items-center">
+                                <span class="text-sm text-gray-500 mb-1">EEG (뇌파)</span>
+                                <canvas id="eeg-canvas" class="w-full h-[100px]"></canvas>
+                                <span class="text-sm text-gray-500 mt-4 mb-1">EOG (안구 운동)</span>
+                                <canvas id="eog-canvas" class="w-full h-[100px]"></canvas>
+                                <span class="text-sm text-gray-500 mt-4 mb-1">EMG (턱 근육)</span>
+                                <canvas id="emg-canvas" class="w-full h-[100px]"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="basic-brainwaves" class="mb-12">
+                <div class="card">
+                    <h2 class="text-2xl font-semibold text-gray-700 text-center mb-6">기본 뇌파 종류 및 특징</h2>
+                    <p class="text-center text-gray-600 mb-6 max-w-3xl mx-auto">수면 단계 판독에 사용되는 주요 뇌파와 특징적인 파형들의 모양과 의미를 알아봅시다.</p>
+                    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <h3 class="font-bold text-gray-800 mb-2">알파파 (Alpha wave)</h3>
+                            <p class="text-sm text-gray-600 mb-4">눈을 감고 편안한 상태에서 나타나는 8-13Hz의 규칙적인 파형입니다.</p>
+                            <canvas id="alpha-canvas" class="w-full h-[80px]"></canvas>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <h3 class="font-bold text-gray-800 mb-2">베타파 (Beta wave)</h3>
+                            <p class="text-sm text-gray-600 mb-4">정신 활동이 활발하고 집중할 때 나타나는 13Hz 이상의 빠른 파형입니다.</p>
+                            <canvas id="beta-canvas" class="w-full h-[80px]"></canvas>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg">
+                            <h3 class="font-bold text-gray-800 mb-2">델타파 (Delta wave)</h3>
+                            <p class="text-sm text-gray-600 mb-4">깊은 수면(N3)에서 관찰되는 0.5-2Hz의 느리고 진폭이 큰 파형입니다.</p>
+                            <canvas id="delta-wave-canvas" class="w-full h-[80px]"></canvas>
+                        </div>
+                        <div class="p-4 bg-gray-50 rounded-lg col-span-full">
+                            <h3 class="font-bold text-gray-800 mb-2">수면 방추 (Sleep Spindle) & K-복합체 (K-Complex)</h3>
+                            <p class="text-sm text-gray-600 mb-4">N2 단계의 특징적인 파형들입니다. 수면 방추는 뇌의 학습과 기억 통합을, K-복합체는 외부 자극으로부터 수면을 보호하는 역할을 하는 것으로 알려져 있습니다.</p>
+                            <div class="flex flex-col items-center">
+                                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/71/Stage2sleep_new.svg/1200px-Stage2sleep_new.svg.png" alt="수면 방추와 K-복합체 파형" class="rounded-lg max-w-full h-auto mb-4">
+                                <div class="grid md:grid-cols-2 gap-4 w-full">
+                                    <div class="flex flex-col items-center">
+                                        <h4 class="text-md font-semibold mb-2">수면 방추</h4>
+                                        <p class="text-sm text-gray-700 text-center">
+                                            11-16Hz의 주파수를 가지며 0.5초 이상 지속되는 <strong class="font-bold">방추(紡錘, 가운데가 불룩한 실패 모양)</strong> 형태의 파형입니다.
+                                        </p>
+                                    </div>
+                                    <div class="flex flex-col items-center">
+                                        <h4 class="text-md font-semibold mb-2">K-복합체</h4>
+                                        <p class="text-sm text-gray-700 text-center">
+                                            뚜렷한 <strong class="font-bold">음의 예파(sharp negative wave)</strong> 직후에 <strong class="font-bold">양의 파(positive component)</strong>가 따라오는 복합 파형으로, 총 0.5초 이상 지속됩니다.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="advanced-topics" class="mb-12">
+                 <div class="card">
+                    <h2 class="text-2xl font-semibold text-gray-700 text-center mb-6">심화 과정: 판독의 난관과 실전 팁</h2>
+                    <p class="text-center text-gray-600 mb-6 max-w-3xl mx-auto">실제 판독 환경은 교과서와 다릅니다. 이 섹션은 과도기 에폭과 인공물(Artifacts)을 식별하는 노하우를 제공합니다.</p>
+                    <div class="space-y-4">
+                        <details>
+                            <summary>과도기 에폭 판독</summary>
+                            <div class="p-4 bg-gray-50 rounded-b-lg">
+                                <p class="text-gray-700 leading-relaxed">한 에폭(30초) 내에 두 가지 이상의 수면 단계 특징이 혼재하는 경우가 빈번합니다. 이 경우, AASM의 '다수결 원칙(majority rule)'을 따릅니다. 해당 에폭에서 가장 많은 시간(50% 초과)을 차지하는 단계를 그 에폭의 최종 단계로 판독합니다. 만약 한 에폭의 16초가 N2 특징을, 14초가 N3 특징을 보인다면, 해당 에폭은 N2로 판독됩니다.</p>
+                            </div>
+                        </details>
+                        <details>
+                            <summary>인공물(Artifacts) 판별의 중요성</summary>
+                            <div class="p-4 bg-gray-50 rounded-b-lg space-y-4">
+                                <p class="text-gray-700 leading-relaxed">인공물은 실제 생체 신호가 아닌 외부 또는 내부 요인에 의해 발생하는 노이즈 신호로, 판독의 정확성을 크게 저해할 수 있습니다. 숙련된 판독가는 이러한 인공물을 식별하고 실제 신호와 구분하는 능력을 갖추어야 합니다.</p>
+                                <ul class="list-disc list-inside space-y-2 text-gray-600">
+                                    <li><strong class="font-semibold">근육 인공물:</strong> 환자의 미세한 움직임이나 긴장으로 인해 EEG 채널에 고주파 노이즈가 섞여 들어오는 현상입니다. 렘수면의 톱니파와 혼동될 수 있습니다.</li>
+                                    <li><strong class="font-semibold">심탄도 인공물:</strong> 심장 박동으로 인한 미세한 몸의 떨림이 뇌파나 호흡 센서에 기록되는 현상입니다.</li>
+                                    <li><strong class="font-semibold">땀 인공물:</strong> 땀으로 인해 전극의 임피던스가 변하면서 저주파의 느린 파형이 나타나는 현상입니다. N3의 델타파와 혼동될 수 있습니다.</li>
+                                    <li><strong class="font-semibold">전기적 인공물:</strong> 외부 전자기기에서 발생하는 전기 신호가 모든 채널을 오염시키는 경우입니다.</li>
+                                </ul>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="visualizations" class="space-y-12">
+                 <div class="card">
+                    <h2 class="text-2xl font-semibold text-gray-700 text-center mb-6">전체 수면 과정 (수면 이면도)</h2>
+                    <p class="text-center text-gray-600 mb-6 max-w-3xl mx-auto">수면 이면도(Hypnogram)는 하룻밤 동안의 수면 단계 변화를 시각적으로 보여주는 그래프입니다. 건강한 성인은 보통 4~6회의 수면 주기를 반복합니다.</p>
+                    <div class="chart-container h-[350px]">
+                        <canvas id="hypnogramChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2 class="text-2xl font-semibold text-gray-700 text-center mb-6">일반적인 수면 단계 비율</h2>
+                     <p class="text-center text-gray-600 mb-6 max-w-3xl mx-auto">건강한 젊은 성인의 평균적인 수면 단계 비율입니다. 나이, 건강 상태, 생활 습관 등에 따라 개인차는 있을 수 있습니다.</p>
+                    <div class="chart-container h-[350px] md:h-[400px] max-w-md">
+                        <canvas id="sleepProportionChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+        
+        <footer class="text-center mt-12 py-6 border-t">
+            <p class="text-gray-500">Source: The AASM Manual for the Scoring of Sleep and Associated Events: Version 3 (2023).</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const stageData = {
+                W: {
+                    title: 'Stage W (각성 단계)',
+                    description: '각성 단계는 다른 모든 수면 단계를 판독하기 위한 기준선(baseline) 역할을 합니다. 눈을 감은 안정 상태의 생체 신호 특징을 명확히 파악해야 이후 수면 단계에서의 미세한 변화를 감지할 수 있습니다.',
+                    eegAnalysis: '눈을 감은 안정 상태에서 후두부(Occipital)에 8-13Hz의 <strong>알파파(Alpha rhythm)</strong>가 뚜렷하게 나타납니다. 이는 눈을 뜨면 감쇠하거나 사라지는 특징을 보입니다.',
+                    eogAnalysis: '의식적인 눈 깜빡임(Blinking)이나 자발적인 빠른 안구 운동이 관찰됩니다. 0.5-2Hz 빈도의 빈번하고 빠른 눈 깜빡임이 특징입니다.',
+                    emgAnalysis: '근긴장도가 모든 수면 단계 중 가장 높아, 파형이 굵고 활발하게 나타납니다. 이는 이후 렘수면의 근육 무긴장 상태와 극명한 대조를 이룹니다.',
+                    eegWave: 'alpha',
+                    eogWave: 'blinks',
+                    emgWave: 'high'
+                },
+                N1: {
+                    title: 'Stage N1 (얕은 수면 단계)',
+                    description: 'N1 단계는 각성 상태에서 수면으로 넘어가는 과도기적 단계로, 전체 수면의 약 2-5%를 차지하는 짧은 기간입니다. 이 단계에서는 주변 자극에 쉽게 깰 수 있습니다.',
+                    eegAnalysis: '알파파가 현저히 감소(에폭의 50% 미만)하고, 저진폭의 혼합 주파수(주로 4-7Hz의 세타파)로 대체됩니다. 간혹 <strong>두정부 예파(Vertex sharp waves)</strong>가 나타날 수 있습니다.',
+                    eogAnalysis: '<strong>느린 안구 운동(Slow Eye Movements, SEM)</strong>이 특징적으로 나타납니다. 파형의 시작부터 정점까지의 시간이 0.5초(500msec) 이상으로, 렘수면의 빠른 안구 운동과 명확히 구분됩니다.',
+                    emgAnalysis: '각성 단계보다 근긴장도가 다소 감소하지만, 변화가 뚜렷하지 않을 수 있습니다.',
+                    eegWave: 'theta',
+                    eogWave: 'slow',
+                    emgWave: 'medium'
+                },
+                N2: {
+                    title: 'Stage N2 (일반 수면 단계)',
+                    description: 'N2 단계는 전체 수면의 약 45-55%를 차지하는 가장 긴 구간입니다. 이 단계부터 본격적인 수면 상태로 간주하며, 외부 자극에 대한 각성 역치가 N1보다 높아집니다.',
+                    eegAnalysis: 'N1과 유사한 배경 파형 위에 <strong>수면 방추(Sleep Spindle)</strong>나 <strong>K-복합체(K-Complex)</strong>가 나타납니다. 이 두 파형은 N2 단계를 정의하는 결정적 증거입니다. 수면 방추는 11-16Hz의 주파수를 가지며 0.5초 이상 지속되는 <strong class="font-bold">방추(紡錘, 가운데가 불룩한 실패 모양)</strong> 형태를 띠며, K-복합체는 뚜렷한 <strong class="font-bold">음의 예파(sharp negative wave)</strong> 직후에 <strong class="font-bold">양의 파(positive component)</strong>가 따라오는 복합 파형입니다.',
+                    eogAnalysis: '안구 운동이 거의 관찰되지 않습니다.',
+                    emgAnalysis: '근긴장도는 N1과 비슷하거나 약간 더 낮은 수준을 유지합니다.',
+                    eegWave: 'kcomplex',
+                    eogWave: 'flat',
+                    emgWave: 'low'
+                },
+                N3: {
+                    title: 'Stage N3 (깊은 수면/서파 수면 단계)',
+                    description: 'N3 단계는 "깊은 잠" 또는 "서파 수면(Slow-wave sleep)"으로 불리며, 낮 동안 소모된 신체 기능을 회복하고 성장 호르몬이 분비되는 중요한 시기입니다. 주로 수면 전반부에 집중적으로 나타납니다.',
+                    eegAnalysis: '0.5-2Hz의 주파수와 75μV 이상의 높은 진폭을 가진 <strong>델타파(Delta wave)</strong>가 에폭의 20% 이상을 차지합니다. 이 기준을 충족하는 K-복합체도 델타파로 간주될 수 있습니다.',
+                    eogAnalysis: '안구 운동이 없습니다.',
+                    emgAnalysis: '근긴장도가 N2보다 낮거나 비슷하며, 때로는 REM 단계처럼 매우 낮게 나타나기도 합니다.',
+                    eegWave: 'delta',
+                    eogWave: 'flat',
+                    emgWave: 'low'
+                },
+                R: {
+                    title: 'Stage R (렘수면 단계)',
+                    description: '렘수면(REM Sleep)은 이름 그대로 급속한 안구 운동이 특징인 단계로, 뇌는 활발하게 활동하지만 신체 근육은 마비된 듯 이완되는 역설적인 상태를 보입니다. 감정 조절 및 기억 강화 등 정신적 회복에 중요한 역할을 합니다.',
+                    eegAnalysis: '각성 상태와 유사한 저진폭의 혼합 주파수 파형이 나타납니다. 특징적인 <strong>톱니파(Sawtooth waves)</strong>가 관찰될 수 있습니다.',
+                    eogAnalysis: '<strong>급속 안구 운동(Rapid Eye Movements, REMs)</strong>이 특징적으로 나타납니다. 파형의 시작부터 정점까지의 시간이 0.5초(500msec) 미만으로 매우 빠르고 불규칙합니다.',
+                    emgAnalysis: '근육의 힘이 완전히 빠지는 <strong>"무긴장(Atonia)"</strong> 상태가 되어, 근전도 활성도가 모든 단계 중 가장 낮습니다. 이는 꿈의 내용을 행동으로 옮기지 못하도록 하는 보호 기전입니다.',
+                    eegWave: 'sawtooth',
+                    eogWave: 'rapid',
+                    emgWave: 'flat'
+                }
+            };
+
+            const stageTitleEl = document.getElementById('stage-title');
+            const stageDescriptionEl = document.getElementById('stage-description');
+            const eegAnalysisEl = document.getElementById('eeg-analysis');
+            const eogAnalysisEl = document.getElementById('eog-analysis');
+            const emgAnalysisEl = document.getElementById('emg-analysis');
+            const navButtons = document.querySelectorAll('.nav-button');
+
+            const eegCanvas = document.getElementById('eeg-canvas');
+            const eogCanvas = document.getElementById('eog-canvas');
+            const emgCanvas = document.getElementById('emg-canvas');
+            const eegCtx = eegCanvas.getContext('2d');
+            const eogCtx = eogCanvas.getContext('2d');
+            const emgCtx = emgCanvas.getContext('2d');
+            
+            let animationFrameId;
+            let time = 0;
+
+            const basicBrainwaveCanvasIds = ['alpha-canvas', 'beta-canvas', 'delta-wave-canvas'];
+            const basicBrainwaveTypes = ['alpha', 'beta', 'delta'];
+
+            function updateStageContent(stage) {
+                const data = stageData[stage];
+                stageTitleEl.textContent = data.title;
+                stageDescriptionEl.textContent = data.description;
+                eegAnalysisEl.innerHTML = data.eegAnalysis;
+                eogAnalysisEl.innerHTML = data.eogAnalysis;
+                emgAnalysisEl.innerHTML = data.emgAnalysis;
+                
+                navButtons.forEach(button => {
+                    button.classList.toggle('active', button.dataset.stage === stage);
+                });
+
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                drawWaveforms(data.eegWave, data.eogWave, data.emgWave);
+            }
+
+            navButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const stage = button.dataset.stage;
+                    updateStageContent(stage);
+                });
+            });
+            
+            function drawWaveforms(eegType, eogType, emgType) {
+                const draw = () => {
+                    eegCtx.clearRect(0, 0, eegCanvas.width, eegCanvas.height);
+                    eogCtx.clearRect(0, 0, eogCanvas.width, eogCanvas.height);
+                    emgCtx.clearRect(0, 0, emgCanvas.width, emgCanvas.height);
+                    
+                    drawEEG(eegType, eegCtx);
+                    drawEOG(eogType, eogCtx);
+                    drawEMG(emgType, emgCtx);
+                    
+                    time += 2;
+                    animationFrameId = requestAnimationFrame(draw);
+                };
+                draw();
+            }
+
+            function drawEEG(type, ctx) {
+                const w = ctx.canvas.width;
+                const h = ctx.canvas.height;
+                const amplitude = h / 3;
+                const centerY = h / 2;
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#4F9A94';
+
+                for (let x = 0; x < w; x++) {
+                    let y;
+                    switch (type) {
+                        case 'alpha':
+                            y = centerY - Math.sin((x + time) * 0.1) * amplitude * 0.8;
+                            break;
+                        case 'theta':
+                            y = centerY - Math.sin((x + time) * 0.05) * amplitude * 0.9;
+                            break;
+                        case 'kcomplex':
+                            const spikeX = w / 2;
+                            let baseWave = Math.sin((x + time) * 0.04) * amplitude * 0.2;
+                            let kComplex = 0;
+                            if (x > spikeX - 30 && x < spikeX + 30) {
+                                kComplex = (1 - Math.abs(x - spikeX) / 30) * -amplitude * 1.2;
+                                if (x > spikeX) kComplex *= -0.5;
+                            }
+                            y = centerY - baseWave + kComplex;
+                            break;
+                        case 'delta':
+                            y = centerY - Math.sin((x * 0.02) + time * 0.03) * amplitude * 1.1;
+                            break;
+                        case 'sawtooth':
+                            const period = 80;
+                            const sawX = (x + time) % period;
+                            const sawY = (sawX / period) * amplitude * 1.5 - amplitude * 0.75;
+                            const baseTheta = Math.sin((x + time) * 0.06) * amplitude * 0.3;
+                            y = centerY - baseTheta + sawY;
+                            break;
+                    }
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            
+            function drawEOG(type, ctx) {
+                const w = ctx.canvas.width;
+                const h = ctx.canvas.height;
+                const centerY = h / 2;
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#60A5FA';
+                for (let x = 0; x < w; x++) {
+                    let y;
+                    switch (type) {
+                        case 'blinks':
+                            y = centerY - Math.sin((x + time) * 0.2) * (x % 50 < 5 ? h / 3 : 0);
+                            break;
+                        case 'slow':
+                            y = centerY - Math.sin((x + time) * 0.05) * (x % 70 < 35 ? h / 4 : h / 5);
+                            break;
+                        case 'flat':
+                            y = centerY;
+                            break;
+                        case 'rapid':
+                            y = centerY - Math.sin((x + time) * 0.4) * (x % 20 < 10 ? h / 3 : 0);
+                            break;
+                    }
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            
+            function drawEMG(type, ctx) {
+                const w = ctx.canvas.width;
+                const h = ctx.canvas.height;
+                const centerY = h / 2;
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#BE185D';
+                for (let x = 0; x < w; x++) {
+                    let y;
+                    switch (type) {
+                        case 'high':
+                            y = centerY - Math.random() * (h / 2) + h / 4;
+                            break;
+                        case 'medium':
+                            y = centerY - Math.random() * (h / 3) + h / 6;
+                            break;
+                        case 'low':
+                            y = centerY - Math.sin((x + time) * 0.01) * h * 0.02;
+                            break;
+                        case 'flat':
+                            y = centerY;
+                            break;
+                    }
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
+            function drawBasicWaveforms() {
+                const alphaCanvas = document.getElementById('alpha-canvas');
+                const betaCanvas = document.getElementById('beta-canvas');
+                const deltaCanvas = document.getElementById('delta-wave-canvas');
+
+                drawStaticWaveform('alpha', alphaCanvas);
+                drawStaticWaveform('beta', betaCanvas);
+                drawStaticWaveform('delta', deltaCanvas);
+            }
+
+            function drawStaticWaveform(type, canvas) {
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+                const h = canvas.height;
+                const amplitude = h / 3;
+                const centerY = h / 2;
+                
+                ctx.clearRect(0, 0, w, h);
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#4F9A94';
+
+                for (let x = 0; x < w; x++) {
+                    let y;
+                    switch (type) {
+                        case 'alpha':
+                            y = centerY - Math.sin(x * 0.1) * amplitude * 0.8;
+                            break;
+                        case 'beta':
+                            y = centerY - Math.sin(x * 0.3) * amplitude * 0.6;
+                            break;
+                        case 'delta':
+                            y = centerY - Math.sin(x * 0.02) * amplitude * 1.1;
+                            break;
+                    }
+                    ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+            
+            updateStageContent('W');
+            drawBasicWaveforms();
+
+            const hypnogramCtx = document.getElementById('hypnogramChart').getContext('2d');
+            const hypnogramData = {
+                labels: Array.from({ length: 96 }, (_, i) => `${Math.floor(i/12)}h ${i%12*5}m`),
+                datasets: [{
+                    label: '수면 단계',
+                    data: [0, 0, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 2, 2, 1, 2, 4, 4, 4, 4, 2, 1, 2, 2, 3, 3, 3, 2, 2, 2, 4, 4, 4, 4, 4, 2, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 2, 2, 1, 1, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 2, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 2, 1, 0, 0, 1, 2, 4, 4, 4, 4, 4, 2, 1, 0, 0, 0, 1, 2, 4, 4, 0],
+                    borderColor: '#A8D8EA',
+                    backgroundColor: 'rgba(168, 216, 234, 0.2)',
+                    borderWidth: 2,
+                    stepped: true,
+                    fill: true,
+                    pointRadius: 0,
+                }]
+            };
+            new Chart(hypnogramCtx, {
+                type: 'line',
+                data: hypnogramData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            reverse: true,
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    return ['W', 'N1', 'N2', 'N3', 'R'][value];
+                                },
+                                stepSize: 1
+                            },
+                            min: 0,
+                            max: 4,
+                            title: { display: true, text: '수면 단계' }
+                        },
+                        x: {
+                            title: { display: true, text: '수면 시간' },
+                            ticks: {
+                                maxTicksLimit: 8
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    const stage = ['Wake', 'N1', 'N2', 'N3', 'REM'][context.raw];
+                                    label += stage;
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+
+            const proportionCtx = document.getElementById('sleepProportionChart').getContext('2d');
+            const proportionData = {
+                labels: ['Wake (5%)', 'N1 (5%)', 'N2 (50%)', 'N3 (20%)', 'REM (20%)'],
+                datasets: [{
+                    label: '수면 단계 비율',
+                    data: [5, 5, 50, 20, 20],
+                    backgroundColor: [
+                        '#E5E7EB',
+                        '#A8D8EA',
+                        '#60A5FA',
+                        '#3B82F6',
+                        '#BE185D'
+                    ],
+                    hoverOffset: 4
+                }]
+            };
+            new Chart(proportionCtx, {
+                type: 'doughnut',
+                data: proportionData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: false,
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>
